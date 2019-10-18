@@ -7,10 +7,12 @@ var cookieSession = require('cookie-session')
 var topics = require('./topics')
 var currentTopic = {}
 var users = []
+var userScore = {}
+var currentDrawer = ''
 var tip1Timeout = null
 var tip2Timeout = null
 var gameInterval = null
-var gameTime = 60
+var gameTime = 120
 const wss = new ws.Server({
   port: 8090
 })
@@ -39,6 +41,7 @@ app.use(function(req, res, next) {
 });
 
 app.post('/api/login', (req, res) => {
+  userScore[req.body.username] = 0
   users.push(req.body.username)
   req.session.username = req.body.username
 
@@ -46,7 +49,8 @@ app.post('/api/login', (req, res) => {
 })
 
 app.post('/api/start-game', (req, res) => {
-  gameTime = 60
+  currentDrawer = req.body.username
+  gameTime = 120
   clearTimeout(tip1Timeout)
   clearTimeout(tip2Timeout)
   clearInterval(gameInterval)
@@ -77,19 +81,35 @@ app.post('/api/start-game', (req, res) => {
         client.send('timedown:' + gameTime)
       })
     } else {
-      currentTopic = {}
       clearTimeout(tip1Timeout)
       clearTimeout(tip2Timeout)
       clearInterval(gameInterval)
       wss.clients.forEach((client) => {
-        client.send('timeout')
+        client.send('timeout:' + JSON.stringify({
+          topic: currentTopic.topic
+        }))
       })
+      currentTopic = {}
     }
   }, 1000)
 })
 
 app.get('/api/topic', (req, res) => {
   res.send(currentTopic.topic)
+})
+
+app.get('/api/score', (req, res) => {
+  var scoreList = []
+  Object.keys(userScore).forEach(username => {
+    scoreList.push({
+      username,
+      score: userScore[username]
+    })
+  })
+  scoreList.sort((item1, item2) => {
+    return item1.score - item2.score
+  })
+  res.send(scoreList)
 })
 
 app.post('/api/message', (req, res) => {
@@ -101,6 +121,8 @@ app.post('/api/message', (req, res) => {
           username: req.session.username
         }))
       })
+      userScore[req.session.username] += gameTime
+      userScore[currentDrawer] += gameTime
       currentTopic = {}
       clearTimeout(tip1Timeout)
       clearTimeout(tip2Timeout)
